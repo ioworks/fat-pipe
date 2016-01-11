@@ -1,4 +1,4 @@
-# fat-pipe
+# FatPipe
 High Performance Pooled-Thread Messaging Library
 
 FatPipe is simple library for messing a high volume of data in very latency sensitve applications.   For a low-latency application to receive, process, and distribute data is of the highest priority.  In many cases, there will be a lot of data to work with. FatPipe increases the girth of the messaging pipe to allow more data and shorten the latency.
