@@ -1,6 +1,8 @@
 # FatPipe
 High Performance Pooled-Thread Library
 
+<a href="https://github.com/ioworks/fat-pipe/wiki/Downloads">Downloads</a>
+
 FatPipe is simple library for operating on a high volume of data in very latency sensitve applications.   For a low-latency application receiving, processing, and distributing data quickly is the highest priority.  In many cases, there will be a lot of data to work with, so it has to also be able to deal with a high volume of data. FatPipe increases the girth of the messaging pipe to allow more data and shorten the latency.
 
 FatPipe supplies interfaces to receive data, handle processing of that data, and consumption of that data.  This allows the workflow to remain simple while still using multi-threaded processing.
