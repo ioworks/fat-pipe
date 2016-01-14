@@ -7,6 +7,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import com.ioworks.noqueue.ProducerSets;
 import org.junit.Test;
 
 import com.ioworks.noqueue.FatPipe;
@@ -20,14 +21,10 @@ public class MapReduceTests {
     int iterations = 20_000;
 
     @Test
-    public void performanceComparisonTest() throws InterruptedException {
+    public void performanceComparisonTest() throws InterruptedException, InstantiationException, IllegalAccessException {
         // initialize producer set
-        ProducerSetImpl<String, WordCount, WordCount> set = new ProducerSetImpl<>(poolSize,
-                new FatMapReducerGenerator(), 1);
-        List<FatPipe.Consumer<WordCount>> consumers = new ArrayList<>();
-        ReducedConsumer consumer = new ReducedConsumer();
-        consumers.add(consumer);
-        set.setConsumers(consumers, 0);
+        ProducerSet<String, WordCount, WordCount> set = ProducerSets.newProducerSet(new FatMapReducerGenerator(), 1, 0, null);
+        set.addConsumer(new ReducedConsumer(), null, 0);
 
         WordCount data1 = new WordCount();
         data1.put("Hello", 1);
@@ -43,7 +40,7 @@ public class MapReduceTests {
         for (int i = 0; i < threads; i++) {
             int threadNo = i;
             producers.submit(() -> {
-                Receptor<WordCount> receptor = set.get(Integer.toString(threadNo));
+                Receptor<WordCount> receptor = set.get("reducer A");
                 for (int r = 0; r < iterations; r++) {
                     receptor.lazySet(threadNo % 2 == 0 ? data1 : data2);
                     Thread.sleep(1);
@@ -76,7 +73,10 @@ public class MapReduceTests {
 
         @Override
         public WordCount execute(WordCount data, Receptor<WordCount> r, FatPipe.Signal n) {
-            reduce(data);
+            data.forEach((word, count) -> {
+                int newCount = runningWordCounts.getOrDefault(word, ZERO) + count;
+                runningWordCounts.put(word, newCount);
+            });
             return new WordCount(runningWordCounts);
         }
 
@@ -84,12 +84,6 @@ public class MapReduceTests {
         public void complete(WordCount product) {
         }
 
-        void reduce(WordCount wordCounts) {
-            wordCounts.forEach((word, count) -> {
-                int newCount = runningWordCounts.getOrDefault(word, ZERO) + count;
-                runningWordCounts.put(word, newCount);
-            });
-        }
     }
 
     static class ReducedConsumer implements FatPipe.Consumer<WordCount> {
