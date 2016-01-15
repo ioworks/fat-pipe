@@ -16,10 +16,3 @@ How much data that can be processed is subject to the limits of the slowest proc
 
 # Streamline processing
 In operating systems, context switching is very expensive.  One thread could process on one dataset and then pass the dataset to another thread.  To pass this data back and forth requires data to be loaded and stored.  FatPipe reduces this by having the thread follow the data instead.  The procedure is changed (which is can be much smaller) and the data being worked on remains the same.
-
-#### Building from the command line
-
-To perform a full build use
-```
-mvn clean package
-```
