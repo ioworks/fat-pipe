@@ -1,6 +1,6 @@
 # FatPipe
 
-<a href="https://github.com/ioworks/fat-pipe/releases">Releases</a>
+<a href="https://github.com/ioworks/fat-pipe/releases">Downloads</a>
 
 High Performance Pooled-Thread Library
 
