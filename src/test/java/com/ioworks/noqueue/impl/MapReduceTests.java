@@ -1,13 +1,13 @@
 package com.ioworks.noqueue.impl;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import com.ioworks.noqueue.ProducerSets;
+
+import org.junit.Before;
 import org.junit.Test;
 
 import com.ioworks.noqueue.FatPipe;
@@ -19,6 +19,11 @@ public class MapReduceTests {
     int threads = 4;
     int poolSize = 2;
     int iterations = 20_000;
+    
+    @Before
+    public void initialize() {
+        ProducerSets.factory = ProducerSetFactoryImpl.class;
+    }
 
     @Test
     public void performanceComparisonTest() throws InterruptedException, InstantiationException, IllegalAccessException {
