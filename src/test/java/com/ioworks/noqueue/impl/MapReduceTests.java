@@ -45,9 +45,44 @@ public class MapReduceTests {
         // consumer will receive the work output
         consumer = new ReducedConsumer();
     }
+    
+    @Test
+    public void multiThreadPerformanceTestWith1Thread() throws InterruptedException, InstantiationException, IllegalAccessException {
+        poolSize = 1; 
+        multiThreadPerformanceTestImpl();
+    }
 
     @Test
-    public void pooledFatPipePerformanceTest() throws InterruptedException, InstantiationException, IllegalAccessException {
+    public void pooledFatPipePerformanceTestWith1Thread() throws InterruptedException, InstantiationException, IllegalAccessException {
+        poolSize = 1;
+        pooledFatPipePerformanceTestImpl();
+    }
+
+    @Test
+    public void multiThreadPerformanceTestWith2Threads() throws InterruptedException, InstantiationException, IllegalAccessException {
+        poolSize = 2; 
+        multiThreadPerformanceTestImpl();
+    }
+
+    @Test
+    public void pooledFatPipePerformanceTestWith2Threads() throws InterruptedException, InstantiationException, IllegalAccessException {
+        poolSize = 2;
+        pooledFatPipePerformanceTestImpl();
+    }
+    
+    @Test
+    public void multiThreadPerformanceTestWith4Threads() throws InterruptedException, InstantiationException, IllegalAccessException {
+        poolSize = 4; 
+        multiThreadPerformanceTestImpl();
+    }
+
+    @Test
+    public void pooledFatPipePerformanceTestWith4Threads() throws InterruptedException, InstantiationException, IllegalAccessException {
+        poolSize = 4;
+        pooledFatPipePerformanceTestImpl();
+    }
+    
+    protected void pooledFatPipePerformanceTestImpl() throws InterruptedException, InstantiationException, IllegalAccessException {
         // initialize producer set
         ProducerSet<String, WordCount, WordCount> set = ProducerSets.newProducerSet(new FatMapReducerGenerator(), 1, 0, null);
         set.addConsumer(consumer, null, 0);
@@ -58,7 +93,7 @@ public class MapReduceTests {
                 Receptor<WordCount> receptor = set.get("reducer A");
                 for (int r = 0; r < iterations; r++) {
                     // send a task to work on to the receptor
-                    WordCount task = tasks[r % tasks.length];
+                    WordCount task = new WordCount(tasks[r % tasks.length], System.nanoTime());
                     receptor.lazySet(task);
                     Thread.sleep(1);
                 }
@@ -71,93 +106,57 @@ public class MapReduceTests {
         producers.awaitTermination(10, TimeUnit.SECONDS);
         TimeUnit.SECONDS.sleep(5);
         set.shutdown();
-        logger.info("PooledFatPipe throughput (maps per second): {}", consumer.throughput());
-    }
-
-    @Test
-    public void singleThreadedPerformanceTest() throws InterruptedException, InstantiationException, IllegalAccessException {
-        // setup single-threaded work queue
-        ArrayBlockingQueue<WordCount> workQueue = new ArrayBlockingQueue<>(1024*1024);
-        
-        // setup a daemon thread to do the work
-        Thread worker = new Thread() {
-            FatMapReducer reducer = new FatMapReducer();
-
-            @Override
-            public void run() {
-                while (true) {
-                    try {
-                        WordCount task;
-                        task = workQueue.poll(1, TimeUnit.SECONDS);
-                        if (task == null) continue;
-                        WordCount output = reducer.execute(task, null, null);
-                        consumer.consume(output, System.nanoTime());
-                    } catch (InterruptedException e) {
-                        logger.trace("Interrupted", e);
-                    }
-                }
-            }
-        };
-        worker.setDaemon(true);
-        worker.start();
-        
-        ExecutorService producers = Executors.newFixedThreadPool(threads);
-        for (int i = 0; i < threads; i++) {
-            producers.submit(() -> {
-                for (int r = 0; r < iterations; r++) {
-                    // send a task to work on to the work queue
-                    WordCount task = tasks[r % tasks.length];
-                    workQueue.offer(task, 1, TimeUnit.SECONDS);
-                    Thread.sleep(1);
-                }
-
-                return null;
-            });
-        }
-
-        producers.shutdown();
-        producers.awaitTermination(10, TimeUnit.SECONDS);
-        TimeUnit.SECONDS.sleep(5);
-        worker.interrupt();
-        logger.info("Single thread throughput (maps per second): {}", consumer.throughput());
+        logger.info(String.format("fp(%d) throughput: %.0f, EMA Latency (uS): %.2f", poolSize, consumer.throughput(), consumer.latencyEMA / 1e3));
     }
     
-    @Test
-    public void multiThreadPerformanceTest() throws InterruptedException, InstantiationException, IllegalAccessException {
+    protected void multiThreadPerformanceTestImpl() throws InterruptedException, InstantiationException, IllegalAccessException {
         // setup single-threaded work queue
-        ArrayBlockingQueue<WordCount> workQueue = new ArrayBlockingQueue<>(1024*1024);
+        ArrayBlockingQueue<WordCount> workQueue = new ArrayBlockingQueue<>(1024);
+        ArrayBlockingQueue<WordCount> outputQueue = new ArrayBlockingQueue<>(1024);
         
-        // setup a daemon thread to do the work
+        // setup a 'poolSize' daemon threads to do the work
         ThreadGroup workerGroup = new ThreadGroup("workers");
-        for (int p=0; p<poolSize; p++) {
-            Thread worker = new Thread(workerGroup, new Runnable() {
+        for (int p = 0; p < poolSize; p++) {
+            Thread worker = new Thread(workerGroup, () -> {
                 FatMapReducer reducer = new FatMapReducer();
-    
-                @Override
-                public void run() {
+                try {
                     while (true) {
-                        try {
-                            WordCount task;
-                            task = workQueue.poll(1, TimeUnit.SECONDS);
-                            if (task == null) continue;
-                            WordCount output = reducer.execute(task, null, null);
-                            consumer.consume(output, System.nanoTime());
-                        } catch (InterruptedException e) {
-                            logger.trace("Interrupted", e);
-                        }
+                        WordCount task = workQueue.poll(1, TimeUnit.SECONDS);
+                        if (task == null)
+                            continue;
+                        WordCount output = reducer.execute(task, null, null);
+                        outputQueue.add(output);
                     }
+                } catch (InterruptedException e) {
+                    logger.trace("Interrupted", e);
                 }
             });
             worker.setDaemon(true);
             worker.start();
         }
         
+        // setup a daemon consumer thread
+        Thread consumerThread = new Thread(workerGroup, () -> {
+            try {
+                while (true) {
+                    WordCount output = outputQueue.poll(1, TimeUnit.SECONDS);
+                    if (output == null)
+                        continue;
+                    consumer.consume(output, System.nanoTime());
+                }
+            } catch (InterruptedException e) {
+                logger.trace("Interrupted", e);
+            }
+        });
+        consumerThread.setDaemon(true);
+        consumerThread.start();
+        
         ExecutorService producers = Executors.newFixedThreadPool(threads);
         for (int i = 0; i < threads; i++) {
             producers.submit(() -> {
                 for (int r = 0; r < iterations; r++) {
                     // send a task to work on to the work queue
-                    WordCount task = tasks[r % tasks.length];
+                    WordCount task = new WordCount(tasks[r % tasks.length], System.nanoTime());
                     workQueue.offer(task, 1, TimeUnit.SECONDS);
                     Thread.sleep(1);
                 }
@@ -170,7 +169,7 @@ public class MapReduceTests {
         producers.awaitTermination(10, TimeUnit.SECONDS);
         TimeUnit.SECONDS.sleep(5);
         workerGroup.interrupt();
-        logger.info("Multi thread throughput (maps per second): {}", consumer.throughput());
+        logger.info(String.format("multi-t(%d) throughput: %.0f, EMA Latency (uS): %.2f", poolSize, consumer.throughput(), consumer.latencyEMA / 1e3));
     }
     
     static class FatMapReducerGenerator implements ProducerSet.Generator<String, WordCount, WordCount> {
@@ -194,13 +193,8 @@ public class MapReduceTests {
             data.forEach((word, count) -> {
                 int newCount = runningWordCounts.getOrDefault(word, ZERO) + count;
                 runningWordCounts.put(word, newCount);
-                
-                // simulate load
-                for (int i=0; i<100_000; i++) {
-                    double x = 12345.0 * 54321.0;
-                }
             });
-            return new WordCount(runningWordCounts);
+            return new WordCount(runningWordCounts, data.time);
         }
 
         @Override
@@ -216,11 +210,16 @@ public class MapReduceTests {
         long startTime = 0;
         long lastInvocationTime = 0;
         long lastLogTime = 0;
+        double latencyEMA = Double.NaN;
 
         @Override
         public void consume(WordCount data, long time) {
             ++invocations;
             lastInvocationTime = time;
+            
+            long latency = System.nanoTime() - data.time;
+            if (Double.isNaN(latencyEMA)) latencyEMA = latency;
+            else latencyEMA = 0.99 * latencyEMA + 0.01 * latency;
             
             if (startTime == 0 && invocations > WARMUP_COUNT_THRESHOLD) {
                 startTime = time;
@@ -241,10 +240,14 @@ public class MapReduceTests {
         public double throughput() {
             if (startTime > 0 && lastInvocationTime > startTime) {
                 long elapsedNanos = lastInvocationTime - startTime;
-                return invocations / (elapsedNanos / 1.0e9);
+                return (invocations - WARMUP_COUNT_THRESHOLD) / (elapsedNanos / 1.0e9);
             } else {
                 return Double.NaN;
             }
+        }
+        
+        public double latencyEMA() {
+            return latencyEMA;
         }
 
         @Override
@@ -255,11 +258,18 @@ public class MapReduceTests {
 
     @SuppressWarnings("serial")
     static class WordCount extends HashMap<String, Integer> {
+        long time;
+
         public WordCount() {
         }
 
         public WordCount(WordCount runningWordCounts) {
             super(runningWordCounts);
+        }
+
+        public WordCount(WordCount runningWordCounts, long time) {
+            super(runningWordCounts);
+            this.time = time;
         }
     }
 }
