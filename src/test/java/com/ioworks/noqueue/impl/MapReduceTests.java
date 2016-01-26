@@ -55,8 +55,8 @@ public class MapReduceTests {
     
     @Test
     public void multiThreadPerformanceTests() throws InterruptedException, InstantiationException, IllegalAccessException {
-        for (int poolSize : new int[] { 1, 2, 4 }) {
-            for (int producerThreads : new int[] { 1, 2, 4, 8 }) {
+        for (int poolSize : new int[] { 1, 2, 3, 4 }) {
+            for (int producerThreads : new int[] { 1, 2, 4, 6, 8, 10, 15, 20 }) {
                 this.poolSize = poolSize;
                 this.producerThreads = producerThreads;
                 multiThreadPerformanceTestImpl();
@@ -66,20 +66,32 @@ public class MapReduceTests {
 
     @Test
     public void pooledFatPipePerformanceTests() throws InterruptedException, InstantiationException, IllegalAccessException {
-        for (int poolSize : new int[] { 1, 2, 4 }) {
-            for (int producerThreads : new int[] { 1, 2, 4, 8 }) {
+        for (int poolSize : new int[] { 1, 2, 3, 4 }) {
+            for (int producerThreads : new int[] { 1, 2, 4, 6, 8, 10, 15, 20 }) {
                 this.poolSize = poolSize;
                 this.producerThreads = producerThreads;
-                pooledFatPipePerformanceTestImpl();
+                pooledFatPipePerformanceTestImpl(false);
+            }
+        }
+    }
+
+    @Test
+    public void pooledFatPipePerformanceReduceContextSwitchTests() throws InterruptedException, InstantiationException, IllegalAccessException {
+        for (int poolSize : new int[] { 1, 2, 3, 4 }) {
+            for (int producerThreads : new int[] { 1, 2, 4, 6, 8, 10, 15, 20 }) {
+                this.poolSize = poolSize;
+                this.producerThreads = producerThreads;
+                pooledFatPipePerformanceTestImpl(true);
             }
         }
     }
     
-    protected void pooledFatPipePerformanceTestImpl() throws InterruptedException, InstantiationException, IllegalAccessException {
+    protected void pooledFatPipePerformanceTestImpl(boolean reduceContextSwitch) throws InterruptedException, InstantiationException, IllegalAccessException {
         // initialize producer set
         ReducedConsumer consumer = new ReducedConsumer();
         ProducerSet<String, WordCount, WordCount> set = ProducerSets.newProducerSet(new FatMapReducerGenerator(), 1, 0, null);
         set.addConsumer(consumer, null, 0);
+        set.setReduceContextSwitch(reduceContextSwitch);
 
         // prepare threads for producing work
         ExecutorService producers = Executors.newFixedThreadPool(producerThreads);
@@ -91,7 +103,7 @@ public class MapReduceTests {
                     // send a task to work on to the receptor
                     WordCount task = new WordCount(tasks[r % tasks.length], System.nanoTime());
                     receptor.lazySet(task);
-                    Thread.sleep(1);
+                    Thread.sleep(2);
                 }
 
                 return null;
@@ -107,7 +119,9 @@ public class MapReduceTests {
         
         // shutdown the PooledFatPipe
         set.shutdown();
-        logger.info(String.format("fp(%d) output throughput: %.0f, EMA Latency (uS): %.2f, input throughput: %.0f", poolSize, consumer.throughput(), consumer.latencyEMA / 1e3, inputThroughput));
+        logger.info(String.format("%s(%d) output throughput: %.0f, EMA Latency (uS): %.2f, input throughput: %.0f",
+                reduceContextSwitch ? "fp-rcs" : "fp", poolSize, consumer.throughput(), consumer.latencyEMA / 1e3,
+                inputThroughput));
     }
     
     protected void multiThreadPerformanceTestImpl() throws InterruptedException, InstantiationException, IllegalAccessException {
@@ -125,8 +139,10 @@ public class MapReduceTests {
                     while (true) {
                         WordCount task = workQueue.poll(1, TimeUnit.SECONDS);
                         if (task == null) continue;
-                        WordCount output = reducer.execute(task, null, null);
-                        outputQueue.add(output);
+                        synchronized (reducer) {
+                            WordCount output = reducer.execute(task, null, null);
+                            outputQueue.add(output);
+                        }
                     }
                 } catch (InterruptedException e) {
                     logger.trace("Interrupted", e);
@@ -195,7 +211,7 @@ public class MapReduceTests {
         private WordCount runningWordCounts = new WordCount();
 
         @Override
-        public synchronized WordCount execute(WordCount data, Receptor<WordCount> r, FatPipe.Signal n) {
+        public WordCount execute(WordCount data, Receptor<WordCount> r, FatPipe.Signal n) {
             data.forEach((word, count) -> {
                 int newCount = runningWordCounts.getOrDefault(word, ZERO) + count;
                 runningWordCounts.put(word, newCount);
