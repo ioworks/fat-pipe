@@ -89,7 +89,7 @@ public class MapReduceTests {
     protected void pooledFatPipePerformanceTestImpl(boolean reduceContextSwitch) throws InterruptedException, InstantiationException, IllegalAccessException {
         // initialize producer set
         ReducedConsumer consumer = new ReducedConsumer();
-        ProducerSet<String, WordCount, WordCount> set = ProducerSets.newProducerSet(new FatMapReducerGenerator(), 1, 0, null);
+        ProducerSet<String, WordCount, WordCount> set = ProducerSets.newProducerSet(new FatMapReducerGenerator(), poolSize, 0, null);
         set.addConsumer(consumer, null, 0);
         set.setReduceContextSwitch(reduceContextSwitch);
 
