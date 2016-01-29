@@ -55,7 +55,7 @@ public class MapReduceTests {
     
     @Test
     public void multiThreadPerformanceTests() throws InterruptedException, InstantiationException, IllegalAccessException {
-        for (int poolSize : new int[] { 1, 2, 3, 4 }) {
+        for (int poolSize : new int[] { 1, 4 }) {
             for (int producerThreads : new int[] { 1, 2, 4, 6, 8, 10, 15, 20 }) {
                 this.poolSize = poolSize;
                 this.producerThreads = producerThreads;
@@ -66,7 +66,7 @@ public class MapReduceTests {
 
     @Test
     public void pooledFatPipePerformanceTests() throws InterruptedException, InstantiationException, IllegalAccessException {
-        for (int poolSize : new int[] { 1, 2, 3, 4 }) {
+        for (int poolSize : new int[] { 1, 4 }) {
             for (int producerThreads : new int[] { 1, 2, 4, 6, 8, 10, 15, 20 }) {
                 this.poolSize = poolSize;
                 this.producerThreads = producerThreads;
@@ -77,7 +77,7 @@ public class MapReduceTests {
 
     @Test
     public void pooledFatPipePerformanceReduceContextSwitchTests() throws InterruptedException, InstantiationException, IllegalAccessException {
-        for (int poolSize : new int[] { 1, 2, 3, 4 }) {
+        for (int poolSize : new int[] { 1, 4 }) {
             for (int producerThreads : new int[] { 1, 2, 4, 6, 8, 10, 15, 20 }) {
                 this.poolSize = poolSize;
                 this.producerThreads = producerThreads;
@@ -89,7 +89,7 @@ public class MapReduceTests {
     protected void pooledFatPipePerformanceTestImpl(boolean reduceContextSwitch) throws InterruptedException, InstantiationException, IllegalAccessException {
         // initialize producer set
         ReducedConsumer consumer = new ReducedConsumer();
-        ProducerSet<String, WordCount, WordCount> set = ProducerSets.newProducerSet(new FatMapReducerGenerator(), 1, 0, null);
+        ProducerSet<String, WordCount, WordCount> set = ProducerSets.newProducerSet(new FatMapReducerGenerator(), poolSize, 0, null);
         set.addConsumer(consumer, null, 0);
         set.setReduceContextSwitch(reduceContextSwitch);
 
@@ -126,8 +126,8 @@ public class MapReduceTests {
     
     protected void multiThreadPerformanceTestImpl() throws InterruptedException, InstantiationException, IllegalAccessException {
         // setup single-threaded work queue
-        ArrayBlockingQueue<WordCount> workQueue = new ArrayBlockingQueue<>(1024);
-        ArrayBlockingQueue<WordCount> outputQueue = new ArrayBlockingQueue<>(1024);
+        ArrayBlockingQueue<WordCount> workQueue = new ArrayBlockingQueue<>(8192);
+        ArrayBlockingQueue<WordCount> outputQueue = new ArrayBlockingQueue<>(8192);
         
         // setup a 'poolSize' daemon threads to do the work
         ReducedConsumer consumer = new ReducedConsumer();
